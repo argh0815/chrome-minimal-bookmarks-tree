@@ -6,9 +6,16 @@
     </head>
     <body>
         <div id="wrapper">
-            <div id="loading" data-i18n-key="popupLoading">Loading ...</div>
-            <ul id="bookmarks">
-            </ul>
+            <div id="toolbar">
+                <input
+                    id="search"
+                    type="search"
+                    placeholder="Search bookmarks..."
+                    autocomplete="off"
+                    spellcheck="false">
+            </div>
+            <div id="loading">...</div>
+            <ul id="bookmarks"></ul>
         </div>
         <script src="browser_action.js"></script>
     </body>

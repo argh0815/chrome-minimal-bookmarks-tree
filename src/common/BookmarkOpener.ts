@@ -21,12 +21,14 @@ export class BookmarkOpener {
           resolve();
           break;
         case BookmarkOpeningDisposition.newWindow:
-          chrome.windows.create({ url });
-          resolve();
+          chrome.windows.getCurrent((currentWindow) => {
+            chrome.windows.create({ url, state: currentWindow.state }, () => resolve());
+          });
           break;
         case BookmarkOpeningDisposition.newIncognitoWindow:
-          chrome.windows.create({ url, incognito: true });
-          resolve();
+          chrome.windows.getCurrent((currentWindow) => {
+            chrome.windows.create({ url, incognito: true, state: currentWindow.state }, () => resolve());
+          });
           break;
         default:
         // fall through

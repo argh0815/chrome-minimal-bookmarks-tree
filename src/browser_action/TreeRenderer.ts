@@ -6,11 +6,59 @@ export class TreeRenderer {
   private readonly hideEmptyFolders: boolean;
   private readonly startWithAllFoldersClosed: boolean;
 
-  constructor(openFolders: PersistentSet<string>, hideEmptyFolders: boolean, startWithAllFoldersClosed: boolean) {
+  // ✅ SEARCH STATE
+  private filter: string = '';
+
+  constructor(
+    openFolders: PersistentSet<string>,
+    hideEmptyFolders: boolean,
+    startWithAllFoldersClosed: boolean
+  ) {
     this.openFolders = openFolders;
     this.hideEmptyFolders = hideEmptyFolders;
     this.startWithAllFoldersClosed = startWithAllFoldersClosed;
   }
+
+  // ✅ SET SEARCH FILTER
+  setFilter(filter: string): void {
+    this.filter = filter.trim().toLowerCase();
+  }
+
+  // =========================
+  // SEARCH HELPERS
+  // =========================
+
+  private matches(node: BookmarkTreeNode): boolean {
+    if (!this.filter) return true;
+
+    const title = (node.title || '').toLowerCase();
+
+    if (title.includes(this.filter)) return true;
+
+    if (node.url && node.url.toLowerCase().includes(this.filter)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private folderContainsMatch(folder: BookmarkTreeNode): boolean {
+    if (this.matches(folder)) return true;
+
+    if (!folder.children) return false;
+
+    for (const child of folder.children) {
+      if (this.folderContainsMatch(child)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // =========================
+  // MAIN RENDER
+  // =========================
 
   renderTree(
     treeNode: BookmarkTreeNode,
@@ -18,6 +66,7 @@ export class TreeRenderer {
     topLevel: boolean = false,
     visible: boolean = true
   ): HTMLElement | DocumentFragment {
+
     let wrapper: HTMLElement | DocumentFragment;
 
     if (topLevel) {
@@ -25,8 +74,9 @@ export class TreeRenderer {
     } else {
       wrapper = document.createElement('ul');
       wrapper.className = 'sub';
+
       if (visible) {
-        wrapper.style.height = 'auto';
+        (wrapper as HTMLElement).style.height = 'auto';
       }
     }
 
@@ -35,42 +85,48 @@ export class TreeRenderer {
     }
 
     treeNode.children.forEach((child: BookmarkTreeNode) => {
-      if (typeof child === 'undefined') {
+      if (!child) return;
+
+      // ✅ SEARCH FILTER (skip whole subtree if no match)
+      if (this.filter && !this.folderContainsMatch(child)) {
         return;
       }
 
       if (child.url) {
-        wrapper.appendChild(
-          this.renderBookmark(child, document)
-        );
-
+        wrapper.appendChild(this.renderBookmark(child, document));
         return;
       }
 
+      const isOpen =
+        this.filter !== '' ||
+        (!this.startWithAllFoldersClosed && this.openFolders.contains(child.id));
+
       wrapper.appendChild(
-        this.renderFolder(
-          !this.startWithAllFoldersClosed && this.openFolders.contains(child.id),
-          document,
-          child
-        )
+        this.renderFolder(isOpen, document, child)
       );
     });
 
     return wrapper;
   }
 
+  // =========================
+  // FOLDER
+  // =========================
+
   private renderFolder(
     isOpen: boolean,
     document: Document,
-    child: chrome.bookmarks.BookmarkTreeNode
+    child: BookmarkTreeNode
   ): HTMLElement {
+
     const d = document.createElement('li');
 
     if (typeof child.url !== 'undefined') {
-      throw new Error('Element appears to be a bookmark rather than a folder. Unable to render.');
+      throw new Error('Folder expected but bookmark found');
     }
 
     d.classList.add('folder');
+
     if (isOpen) {
       d.classList.add('open');
     }
@@ -80,8 +136,6 @@ export class TreeRenderer {
     d.appendChild(folder);
 
     if (this.hideEmptyFolders && this.isFolderEmpty(child)) {
-      // we need to add hidden nodes for these
-      // otherwise sorting doesn't work properly
       d.classList.add('hidden');
     } else {
       d.dataset.itemId = child.id;
@@ -91,6 +145,7 @@ export class TreeRenderer {
           const children = this.renderTree(child, document, false, isOpen);
           d.appendChild(children);
         }
+
         d.dataset.loaded = isOpen ? '1' : '0';
       }
     }
@@ -98,12 +153,22 @@ export class TreeRenderer {
     return d;
   }
 
+  // =========================
+  // BOOKMARK
+  // =========================
+
   private renderBookmark(
-    child: chrome.bookmarks.BookmarkTreeNode,
+    child: BookmarkTreeNode,
     document: Document
   ): HTMLElement {
-    if (typeof child.url === 'undefined') {
-      throw new Error('Element does not appear to be a bookmark. Unable to render.');
+
+    if (!child.url) {
+      throw new Error('Bookmark expected but folder found');
+    }
+
+    // ✅ FILTER BOOKMARKS
+    if (!this.matches(child)) {
+      return document.createDocumentFragment() as unknown as HTMLElement;
     }
 
     const d = document.createElement('li');
@@ -112,18 +177,26 @@ export class TreeRenderer {
     d.dataset.itemId = child.id;
 
     const bookmark = document.createElement('span');
+
     if (!/^\s*$/.test(child.title)) {
       bookmark.innerText = child.title;
     } else {
       bookmark.innerHTML = '&nbsp;';
     }
+
     bookmark.title = `${child.title} [${child.url}]`;
     bookmark.style.backgroundImage = `url("${this.getFaviconUrl(child.url)}")`;
+
     bookmark.className = 'bookmark';
+
     d.appendChild(bookmark);
 
     return d;
   }
+
+  // =========================
+  // FAVICON
+  // =========================
 
   private getFaviconUrl(url: string): string {
     const urlObj = new URL(chrome.runtime.getURL('/_favicon/'));
@@ -132,24 +205,21 @@ export class TreeRenderer {
     return urlObj.toString();
   }
 
+  // =========================
+  // UTIL
+  // =========================
+
   isFolderEmpty(folder: BookmarkTreeNode): boolean {
-    if (typeof folder.children === 'undefined') {
-      return false;
-    }
+    if (!folder.children) return false;
 
-    const children: BookmarkTreeNode[] = folder.children;
+    if (folder.children.length === 0) return true;
 
-    if (children.length === 0) {
-      return true;
-    }
-
-    for (folder of children) {
-      if (!this.isFolderEmpty(folder)) {
+    for (const child of folder.children) {
+      if (!this.isFolderEmpty(child)) {
         return false;
       }
     }
 
-    // all children, plus their children are empty
     return true;
   }
 }

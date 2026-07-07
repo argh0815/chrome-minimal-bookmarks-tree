@@ -13,6 +13,8 @@ import {Utils} from "../common/Utils";
 import {KeyHandler} from "./KeyHandler";
 import {BookmarkManager} from "./BookmarkManager";
 
+// -------------------- INIT --------------------
+
 const settings = await SettingsFactory.create();
 
 const translator = new ChromeTranslator();
@@ -22,6 +24,13 @@ const contextMenuFactory = new ContextMenuFactory(bookmarkManager, translator, d
 const contextMenuRenderer = new ContextMenuRenderer(document, new WindowLocationCalculator(window));
 
 const openFolders: PersistentSet<string> = new PersistentSet('openfolders');
+
+// Start with Bookmarks Bar expanded?
+if (settings.isEnabled('expand_bookmarks_bar')) {
+  openFolders.clear();
+  openFolders.add('1');
+}
+
 const treeRenderer = new TreeRenderer(
   openFolders,
   settings.isEnabled('hide_empty_folders'),
@@ -39,99 +48,193 @@ const clickHandler = new ClickHandler(
 
 const keyHandler = new KeyHandler(bookmarkManager);
 
-const loading = <HTMLElement>document.querySelector('#loading');
-const bm = <HTMLElement>document.querySelector('#bookmarks');
-const wrapper = <HTMLElement>document.querySelector('#wrapper');
+// -------------------- DOM --------------------
 
-chrome.bookmarks.getTree((bookmarksTree) => {
-  if (typeof bookmarksTree[0] === 'undefined') {
-    return;
+const loading = document.querySelector('#loading') as HTMLElement;
+const bm = document.querySelector('#bookmarks') as HTMLElement;
+const wrapper = document.querySelector('#wrapper') as HTMLElement;
+const search = document.querySelector('#search') as HTMLInputElement;
+
+// -------------------- SEARCH STATE --------------------
+
+let bookmarksTreeCache: chrome.bookmarks.BookmarkTreeNode;
+let flatBookmarks: chrome.bookmarks.BookmarkTreeNode[] = [];
+
+// collect bookmarks recursively
+function collect(node: chrome.bookmarks.BookmarkTreeNode) {
+  if (node.url) {
+    flatBookmarks.push(node);
   }
 
-  if (typeof bookmarksTree[0].children === 'undefined') {
-    return;
-  }
+  node.children?.forEach(collect);
+}
 
-  const otherBookmarks = treeRenderer.renderTree(
-    bookmarksTree[0].children[1],
-    document,
-    true
-  );
+// -------------------- TREE RENDER --------------------
 
-  delete bookmarksTree[0].children[1];
-  const bookmarksFolder = treeRenderer.renderTree(
-    bookmarksTree[0],
-    document,
-    true
-  );
+function renderTreeMode() {
+  bm.replaceChildren();
+
+  const root = bookmarksTreeCache;
+  const other = root.children?.[1];
+
+  const bookmarksFolder = treeRenderer.renderTree(root, document, true);
 
   if (bookmarksFolder) {
     bm.appendChild(bookmarksFolder);
-    bm.childNodes.forEach((item: ChildNode) => {
-      if (item.nodeName !== 'LI') {
-        return;
-      }
-      (item as Element).classList.add('nosort');
-    });
-  }
-  if (otherBookmarks) {
-    bm.appendChild(otherBookmarks);
   }
 
-  if (settings.isEnabled('remember_scroll_position')) {
-    const scrolltop = localStorage.getItem('scrolltop');
-    if (null !== scrolltop) {
-      setTimeout(() => { wrapper.scrollTop = parseInt(scrolltop, 10); }, 10);
-    }
+  if (other) {
+    bm.appendChild(
+      treeRenderer.renderTree(other, document, true)
+    );
   }
+}
+
+// -------------------- SEARCH RENDER --------------------
+
+function renderSearchMode(query: string) {
+  const q = query.trim().toLowerCase();
+
+  bm.replaceChildren();
+
+  if (!q) {
+    renderTreeMode();
+    return;
+  }
+
+  const results = flatBookmarks.filter(b =>
+    (b.title || '').toLowerCase().includes(q) ||
+    (b.url || '').toLowerCase().includes(q)
+  );
+
+  for (const b of results) {
+    const li = document.createElement('li');
+
+    // ✅ Option 3: mimic TreeRenderer.renderBookmark()
+
+    const span = document.createElement('span');
+    span.className = 'bookmark';
+
+    span.textContent = b.title || b.url!;
+    span.title = `${b.title} [${b.url}]`;
+
+    // favicon like TreeRenderer
+    span.style.backgroundImage =
+      `url("${chrome.runtime.getURL('/_favicon/') + '?pageUrl=' + encodeURIComponent(b.url!) + '&size=32'}")`;
+
+    li.dataset.url = b.url!;
+    li.dataset.itemId = b.id;
+
+    li.appendChild(span);
+    bm.appendChild(li);
+  }
+}
+
+// -------------------- LOAD BOOKMARKS --------------------
+
+chrome.bookmarks.getTree((bookmarksTree) => {
+  if (!bookmarksTree[0]?.children) return;
+
+  bookmarksTreeCache = bookmarksTree[0];
+
+  flatBookmarks = [];
+  collect(bookmarksTreeCache);
+
+  renderTreeMode();
 
   (bm as HTMLElement).style.display = 'block';
   (loading.parentNode as HTMLElement).removeChild(loading);
 });
 
-bm.addEventListener('click', (event) => { clickHandler.handleClick(event); });
-bm.addEventListener('contextmenu', (event) => { clickHandler.handleRightClick(event); });
-bm.addEventListener('mousedown', (event) => { clickHandler.handleMouseDown(event); });
+// -------------------- EVENTS --------------------
+
+search.addEventListener('input', () => {
+  const value = search.value;
+
+  if (value.trim() === '') {
+    renderTreeMode();
+  } else {
+    renderSearchMode(value);
+  }
+});
+
+bm.addEventListener('click', (event) => clickHandler.handleClick(event));
+bm.addEventListener('contextmenu', (event) => clickHandler.handleRightClick(event));
+bm.addEventListener('mousedown', (event) => clickHandler.handleMouseDown(event));
 
 if (settings.isEnabled('keyboard_support')) {
-  window.addEventListener('keyup', (event) => { keyHandler.handleKeyUp(event); });
+  window.addEventListener('keyup', (event) => keyHandler.handleKeyUp(event));
 }
 
 document.addEventListener('contextmenu', () => false);
 
-initDragDrop(bm, wrapper);
+// Disable Drag & Drop as it creates an issue with clicks on folders not registering
+// initDragDrop(bm, wrapper);
+
+// -------------------- SCROLL RESTORE --------------------
 
 if (settings.isEnabled('remember_scroll_position')) {
+  const scrolltop = localStorage.getItem('scrolltop');
+  if (scrolltop !== null) {
+    setTimeout(() => {
+      wrapper.scrollTop = parseInt(scrolltop, 10);
+    }, 10);
+  }
+
   let scrollTimeout: number | undefined;
+
   wrapper.addEventListener('scroll', () => {
     clearTimeout(scrollTimeout);
-    scrollTimeout = <number><any>setTimeout(() => { localStorage.setItem('scrolltop', String(wrapper.scrollTop)); }, 100);
+
+    scrollTimeout = window.setTimeout(() => { localStorage.setItem('scrolltop', String(wrapper.scrollTop)); }, 100);
   });
 }
 
+// -------------------- SEARCH BOX --------------------
+window.addEventListener(
+  'keyup',
+  (e) => {
+    const active = document.activeElement === search;
+
+    if (!active && e.key.toLowerCase() === 's') {
+      search.style.display = 'block';
+      search.focus();
+      search.select();
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (search.style.display === 'block') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        search.value = '';
+        search.style.display = 'none';
+        renderTreeMode();
+      }
+    }
+  },
+  true // <-- IMPORTANT: capture phase
+);
+
+// -------------------- TRANSLATION --------------------
+
 Utils.translateDocument(window.document);
 
-// Not enforced by this extension, but hardcoded in chrome.
-// So we need to prevent creating a browser action bigger than that, because:
-//
-//   1. When height > 800 it will cause duplicate vertical scrollbars
-//   2. When width > 600 it will cause
-//      a) the vertical scrollbar to be out of view
-//      b) a horizontal scrollbar to be shown
-//
-// Also see https://stackoverflow.com/questions/6904755/is-there-a-hardcoded-maximum-height-for-chrome-browseraction-popups
-const browserActionMaxHeight: number = 600;
-const browserActionMaxWidth: number = 800;
+// -------------------- SIZE + THEME --------------------
 
-const width: number = Math.floor(Math.min(browserActionMaxWidth, settings.getNumber('width')));
-const height: number = Math.floor(Math.min(browserActionMaxHeight, settings.getNumber('height')));
+const browserActionMaxHeight = 600;
+const browserActionMaxWidth = 800;
+
+const width = Math.floor(Math.min(browserActionMaxWidth, settings.getNumber('width')));
+const height = Math.floor(Math.min(browserActionMaxHeight, settings.getNumber('height')));
 
 wrapper.style.width = `${width}px`;
 wrapper.style.minWidth = `${width}px`;
 wrapper.style.maxWidth = `${width}px`;
 wrapper.style.maxHeight = `${height}px`;
 
-const font: string = settings.getString('font');
+const font = settings.getString('font');
 if (font !== '__default__') {
   document.body.style.fontFamily = `"${font}"`;
 }

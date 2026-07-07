@@ -73,7 +73,7 @@ export class ContextMenuFactory {
         new ContextMenuTextItem(
           this.translator.translate('popupOpenNewTab'),
           () => {
-            BookmarkOpener.open(url, BookmarkOpeningDisposition.foregroundTab);
+            BookmarkOpener.open(url, BookmarkOpeningDisposition.backgroundTab);
           }
         ),
         new ContextMenuTextItem(

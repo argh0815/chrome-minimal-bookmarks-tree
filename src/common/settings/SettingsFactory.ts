@@ -15,6 +15,7 @@ export class SettingsFactory {
         open_all_sub: true,
         animation_duration: 200,
         start_with_all_folders_closed: false,
+        expand_bookmarks_bar: true,
         hide_empty_folders: false,
         remember_scroll_position: true,
         height: 500,
