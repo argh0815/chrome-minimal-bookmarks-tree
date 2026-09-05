@@ -5,7 +5,8 @@ body.theme--dark {
 .theme--dark {
   background: #111;
 
-  .selected > span {
+  .selected > span,
+  .kb-selected > span {
     color: #fff;
     background-color: #333;
   }
@@ -97,4 +98,18 @@ body.theme--dark {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.05);
   }
+}
+
+
+.theme--dark #bookmarks.keyboard-navigation-active .folder > span:hover,
+.theme--dark #bookmarks.keyboard-navigation-active .bookmark:hover {
+  color: #999;
+  background-color: transparent;
+}
+
+
+.theme--dark #bookmarks.keyboard-navigation-active li.kb-selected > span,
+.theme--dark #bookmarks.keyboard-navigation-active li.kb-selected > span:hover {
+  color: #fff;
+  background-color: #333;
 }

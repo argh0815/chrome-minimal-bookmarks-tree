@@ -11,6 +11,7 @@ import PersistentSet from "./PersistentSet";
 import {FolderToggler} from "./FolderToggler";
 import {Utils} from "../common/Utils";
 import {KeyHandler} from "./KeyHandler";
+import {KeyboardNavigation} from "./KeyboardNavigation";
 import {BookmarkManager} from "./BookmarkManager";
 
 // -------------------- INIT --------------------
@@ -46,14 +47,15 @@ const clickHandler = new ClickHandler(
   folderToggler
 );
 
-const keyHandler = new KeyHandler(bookmarkManager);
-
 // -------------------- DOM --------------------
 
 const loading = document.querySelector('#loading') as HTMLElement;
 const bm = document.querySelector('#bookmarks') as HTMLElement;
 const wrapper = document.querySelector('#wrapper') as HTMLElement;
 const search = document.querySelector('#search') as HTMLInputElement;
+
+const keyHandler = new KeyHandler(bookmarkManager);
+const keyboardNavigation = new KeyboardNavigation(wrapper, search, bm);
 
 // -------------------- SEARCH STATE --------------------
 
@@ -158,9 +160,16 @@ search.addEventListener('input', () => {
   }
 });
 
+// Capture mouse selection first so a clicked row becomes the keyboard anchor.
+bm.addEventListener('click', (event) => keyboardNavigation.handleTreeClick(event), true);
 bm.addEventListener('click', (event) => clickHandler.handleClick(event));
 bm.addEventListener('contextmenu', (event) => clickHandler.handleRightClick(event));
 bm.addEventListener('mousedown', (event) => clickHandler.handleMouseDown(event));
+bm.addEventListener('mousemove', () => keyboardNavigation.handleMouseMove());
+
+// Tree/search navigation is always available. The legacy Delete-key feature
+// remains controlled by the existing keyboard_support setting.
+document.addEventListener('keydown', (event) => keyboardNavigation.handleKeyDown(event), true);
 
 if (settings.isEnabled('keyboard_support')) {
   window.addEventListener('keyup', (event) => keyHandler.handleKeyUp(event));

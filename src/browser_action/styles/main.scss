@@ -62,7 +62,8 @@ span {
   padding-top: 1rem;
 }
 
-.selected > span {
+.selected > span,
+.kb-selected > span {
   background-color: $selected-color;
 }
 
@@ -237,4 +238,21 @@ li {
 
 .hidden {
   display: none;
+}
+
+
+/* While keyboard navigation is active, a stationary mouse pointer must not
+   visually masquerade as the keyboard cursor. Hover highlighting returns as
+   soon as the mouse moves. */
+#bookmarks.keyboard-navigation-active .folder > span:hover,
+#bookmarks.keyboard-navigation-active .bookmark:hover {
+  background-color: inherit;
+}
+
+
+/* If keyboard navigation reaches the row under the stationary mouse,
+   the keyboard selection must still be visible. */
+#bookmarks.keyboard-navigation-active li.kb-selected > span,
+#bookmarks.keyboard-navigation-active li.kb-selected > span:hover {
+  background-color: $selected-color;
 }
