@@ -27,7 +27,8 @@ export class SettingsFactory {
         super_click_action: 'new',
         font: '__default__',
         theme: 'light',
-        keyboard_support: false
+        keyboard_support: false,
+        search_key: 's'
       };
       const values = await chrome.storage.sync.get(defaults);
 

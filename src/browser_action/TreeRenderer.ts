@@ -99,7 +99,7 @@ export class TreeRenderer {
 
       const isOpen =
         this.filter !== '' ||
-        (!this.startWithAllFoldersClosed && this.openFolders.contains(child.id));
+        this.openFolders.contains(child.id);
 
       wrapper.appendChild(
         this.renderFolder(isOpen, document, child)

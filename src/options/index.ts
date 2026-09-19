@@ -58,6 +58,39 @@ checkboxes.forEach((checkbox: HTMLInputElement) => {
   });
 });
 
+
+const searchKeyInput = window.document.querySelector('#search_key') as HTMLInputElement | null;
+if (null !== searchKeyInput) {
+  searchKeyInput.value = settings.getString('search_key').toLowerCase();
+
+  searchKeyInput.addEventListener('keydown', (event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      searchKeyInput.value = '';
+      settings.set('search_key', '');
+      return;
+    }
+
+    if (event.ctrlKey || event.altKey || event.metaKey ||
+      event.key === 'Shift' || event.key === 'Control' || event.key === 'Alt' || event.key === 'Meta' ||
+      event.key === 'Tab' || event.key === 'Enter' || event.key === 'Escape' ||
+      event.key === 'CapsLock' || event.key === 'NumLock' || event.key === 'ScrollLock' ||
+      event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End' ||
+      event.key === 'PageUp' || event.key === 'PageDown' || event.key === 'Insert' ||
+      event.key.startsWith('F') && /^F\d+$/.test(event.key)) {
+      return;
+    }
+
+    if (event.key.length === 1) {
+      const key = event.key.toLowerCase();
+      searchKeyInput.value = key;
+      settings.set('search_key', key);
+    }
+  });
+}
+
 const numericInputs = <HTMLInputElement[]><any>window.document.querySelectorAll('input[type="number"]');
 numericInputs.forEach((numericInput: HTMLInputElement) => {
   const id = numericInput.getAttribute('id');

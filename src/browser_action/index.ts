@@ -26,10 +26,17 @@ const contextMenuRenderer = new ContextMenuRenderer(document, new WindowLocation
 
 const openFolders: PersistentSet<string> = new PersistentSet('openfolders');
 
-// Start with Bookmarks Bar expanded?
-if (settings.isEnabled('expand_bookmarks_bar')) {
+// Apply startup folder-state options in a deterministic order.
+// First close everything when requested, then let the Bookmarks Bar option
+// explicitly decide whether the Bookmarks Bar itself starts open.
+if (settings.isEnabled('start_with_all_folders_closed')) {
   openFolders.clear();
+}
+
+if (settings.isEnabled('expand_bookmarks_bar')) {
   openFolders.add('1');
+} else {
+  openFolders.remove('1');
 }
 
 const treeRenderer = new TreeRenderer(
@@ -77,18 +84,10 @@ function renderTreeMode() {
   bm.replaceChildren();
 
   const root = bookmarksTreeCache;
-  const other = root.children?.[1];
-
   const bookmarksFolder = treeRenderer.renderTree(root, document, true);
 
   if (bookmarksFolder) {
     bm.appendChild(bookmarksFolder);
-  }
-
-  if (other) {
-    bm.appendChild(
-      treeRenderer.renderTree(other, document, true)
-    );
   }
 }
 
@@ -205,7 +204,7 @@ window.addEventListener(
   (e) => {
     const active = document.activeElement === search;
 
-    if (!active && e.key.toLowerCase() === 's') {
+    if (!active && e.key.toLowerCase() === settings.getString('search_key').toLowerCase()) {
       search.style.display = 'block';
       search.focus();
       search.select();
@@ -238,6 +237,14 @@ const browserActionMaxWidth = 800;
 const width = Math.floor(Math.min(browserActionMaxWidth, settings.getNumber('width')));
 const height = Math.floor(Math.min(browserActionMaxHeight, settings.getNumber('height')));
 
+// Give the popup viewport the configured width as well as the wrapper.
+// When every folder is closed, the bookmark rows have very little intrinsic
+// width because their text uses overflow:hidden.  If only #wrapper is sized,
+// Chromium can keep the popup viewport at roughly icon width and clip the
+// folder names.
+document.documentElement.style.width = `${width}px`;
+document.body.style.width = `${width}px`;
+document.body.style.minWidth = `${width}px`;
 wrapper.style.width = `${width}px`;
 wrapper.style.minWidth = `${width}px`;
 wrapper.style.maxWidth = `${width}px`;
