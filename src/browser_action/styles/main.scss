@@ -39,6 +39,13 @@ body {
   position: relative;
 }
 
+#toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: $background-color;
+}
+
 #search {
   display: none;
   width: calc(100% - 1px);

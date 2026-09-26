@@ -166,6 +166,16 @@ bm.addEventListener('contextmenu', (event) => clickHandler.handleRightClick(even
 bm.addEventListener('mousedown', (event) => clickHandler.handleMouseDown(event));
 bm.addEventListener('mousemove', () => keyboardNavigation.handleMouseMove());
 
+// Escape while the empty search box is open must close only the search box.
+// Prevent Chrome from treating Escape as a request to close the browser-action popup.
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.activeElement === search && search.value.trim() === '') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    search.style.display = 'none';
+  }
+}, true);
+
 // Tree/search navigation is always available. The legacy Delete-key feature
 // remains controlled by the existing keyboard_support setting.
 document.addEventListener('keydown', (event) => keyboardNavigation.handleKeyDown(event), true);
@@ -216,9 +226,16 @@ window.addEventListener(
         e.preventDefault();
         e.stopImmediatePropagation();
 
+        const hadSearchText = search.value.trim().length > 0;
         search.value = '';
         search.style.display = 'none';
-        renderTreeMode();
+
+        // Only rebuild the tree when we were actually showing search results.
+        // If the search box is already empty, closing it must leave the tree
+        // (including its open folders) untouched.
+        if (hadSearchText) {
+          renderTreeMode();
+        }
       }
     }
   },

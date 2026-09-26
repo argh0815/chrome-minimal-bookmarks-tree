@@ -66,7 +66,7 @@ export class KeyboardNavigation {
 
     const active = document.activeElement;
     if (
-      active instanceof HTMLInputElement ||
+      (active instanceof HTMLInputElement && active !== this.search) ||
       active instanceof HTMLTextAreaElement ||
       active instanceof HTMLSelectElement ||
       (active instanceof HTMLElement && active.isContentEditable)
