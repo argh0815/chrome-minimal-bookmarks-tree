@@ -1,49 +1,47 @@
 export default class PersistentSet<T> {
   private readonly key: string;
-  private elements: Array<T>;
+  private elements: Set<T>;
 
   constructor(key: string) {
     this.key = key;
-    this.elements = [];
+    this.elements = new Set<T>();
     this.load();
   }
 
   add(id: T): void {
-    const pos = this.elements.indexOf(id);
-    if (pos !== -1) {
+    if (this.elements.has(id)) {
       return;
     }
-    this.elements.push(id);
+    this.elements.add(id);
     this.save();
   }
 
   remove(id: T): void {
-    const pos = this.elements.indexOf(id);
-    if (pos === -1) {
+    if (!this.elements.has(id)) {
       return;
     }
-    this.elements.splice(pos, 1);
+    this.elements.delete(id);
     this.save();
   }
 
   clear() {
-    this.elements = [];
+    this.elements.clear();
     this.save();
   }
 
   contains(id: T): boolean {
-    return this.elements.indexOf(id) > -1;
+    return this.elements.has(id);
   }
 
   load(): void {
     const elements = localStorage.getItem(this.key);
     if (elements !== null) {
-      this.elements = JSON.parse(elements);
+      this.elements = new Set(JSON.parse(elements));
     }
   }
 
   save(): void {
-    const data = JSON.stringify(this.elements);
+    const data = JSON.stringify(Array.from(this.elements));
     localStorage.setItem(this.key, data);
   }
 }

@@ -1,5 +1,4 @@
 import {SettingsFactory} from '../common/settings/SettingsFactory';
-import {initDragDrop} from "./drag_drop";
 import {ClickHandler} from "./ClickHandler";
 import {ContextMenuFactory} from "./ContextMenuFactory";
 import {ChromeTranslator} from "../common/translator/ChromeTranslator";
@@ -16,7 +15,15 @@ import {BookmarkManager} from "./BookmarkManager";
 
 // -------------------- INIT --------------------
 
-const settings = await SettingsFactory.create();
+// Settings and the bookmark tree are independent, so fetch both right away
+// instead of waiting for settings before even asking for the bookmarks —
+// that turned two independent round trips into one twice as long.
+const settingsPromise = SettingsFactory.create();
+const bookmarksTreePromise = new Promise<chrome.bookmarks.BookmarkTreeNode[]>((resolve) => {
+  chrome.bookmarks.getTree(resolve);
+});
+
+const settings = await settingsPromise;
 
 const translator = new ChromeTranslator();
 const dialogRenderer = new DialogRenderer(document, translator);
@@ -39,11 +46,7 @@ if (settings.isEnabled('expand_bookmarks_bar')) {
   openFolders.remove('1');
 }
 
-const treeRenderer = new TreeRenderer(
-  openFolders,
-  settings.isEnabled('hide_empty_folders'),
-  settings.isEnabled('start_with_all_folders_closed')
-);
+const treeRenderer = new TreeRenderer(openFolders, settings.isEnabled('hide_empty_folders'));
 
 const folderToggler = new FolderToggler(openFolders, treeRenderer, settings);
 
@@ -96,8 +99,6 @@ function renderTreeMode() {
 function renderSearchMode(query: string) {
   const q = query.trim().toLowerCase();
 
-  bm.replaceChildren();
-
   if (!q) {
     renderTreeMode();
     return;
@@ -108,55 +109,63 @@ function renderSearchMode(query: string) {
     (b.url || '').toLowerCase().includes(q)
   );
 
+  const fragment = document.createDocumentFragment();
+
   for (const b of results) {
+    // Mirrors TreeRenderer.renderBookmark() as a flat (non-nested) row, since
+    // search results ignore folder structure entirely.
     const li = document.createElement('li');
-
-    // ✅ Option 3: mimic TreeRenderer.renderBookmark()
-
-    const span = document.createElement('span');
-    span.className = 'bookmark';
-
-    span.textContent = b.title || b.url!;
-    span.title = `${b.title} [${b.url}]`;
-
-    // favicon like TreeRenderer
-    span.style.backgroundImage =
-      `url("${chrome.runtime.getURL('/_favicon/') + '?pageUrl=' + encodeURIComponent(b.url!) + '&size=32'}")`;
-
     li.dataset.url = b.url!;
     li.dataset.itemId = b.id;
 
+    const span = document.createElement('span');
+    span.className = 'bookmark';
+    span.textContent = b.title || b.url!;
+    span.title = `${b.title} [${b.url}]`;
+    span.style.backgroundImage = `url("${TreeRenderer.getFaviconUrl(b.url!)}")`;
+
     li.appendChild(span);
-    bm.appendChild(li);
+    fragment.appendChild(li);
   }
+
+  bm.replaceChildren(fragment);
 }
 
 // -------------------- LOAD BOOKMARKS --------------------
 
-chrome.bookmarks.getTree((bookmarksTree) => {
+bookmarksTreePromise.then((bookmarksTree) => {
   if (!bookmarksTree[0]?.children) return;
 
   bookmarksTreeCache = bookmarksTree[0];
-
-  flatBookmarks = [];
-  collect(bookmarksTreeCache);
 
   renderTreeMode();
 
   (bm as HTMLElement).style.display = 'block';
   (loading.parentNode as HTMLElement).removeChild(loading);
+
+  // The search index isn't needed for the first frame, so build it in a
+  // follow-up task rather than delaying the tree that's already visible.
+  window.setTimeout(() => {
+    flatBookmarks = [];
+    collect(bookmarksTreeCache);
+  }, 0);
 });
 
 // -------------------- EVENTS --------------------
 
-search.addEventListener('input', () => {
-  const value = search.value;
+let searchDebounceTimer: number | undefined;
 
-  if (value.trim() === '') {
-    renderTreeMode();
-  } else {
-    renderSearchMode(value);
-  }
+search.addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
+
+  searchDebounceTimer = window.setTimeout(() => {
+    const value = search.value;
+    if (value.trim() === '') {
+      renderTreeMode();
+    } else {
+      renderSearchMode(value);
+    }
+  }, 60);
 });
 
 // Capture mouse selection first so a clicked row becomes the keyboard anchor.

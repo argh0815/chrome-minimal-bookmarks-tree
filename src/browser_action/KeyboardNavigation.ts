@@ -1,4 +1,9 @@
 export class KeyboardNavigation {
+  private static readonly TREE_KEYS = new Set([
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Home', 'End', 'PageUp', 'PageDown',
+  ]);
+  private static readonly SEARCH_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter']);
+
   private wrapper: HTMLElement;
   private search: HTMLInputElement;
   private bookmarks: HTMLElement;
@@ -74,19 +79,7 @@ export class KeyboardNavigation {
       return;
     }
 
-    const handled = [
-      'ArrowUp',
-      'ArrowDown',
-      'ArrowLeft',
-      'ArrowRight',
-      'Enter',
-      'Home',
-      'End',
-      'PageUp',
-      'PageDown',
-    ];
-
-    if (!handled.includes(event.key)) {
+    if (!KeyboardNavigation.TREE_KEYS.has(event.key)) {
       return;
     }
 
@@ -136,10 +129,7 @@ export class KeyboardNavigation {
     }
 
     if (event.key === 'Enter') {
-      const target = this.directSpan(item);
-      if (target) {
-        this.keyboardClick(target);
-      }
+      this.activateItem(item);
       return;
     }
 
@@ -149,10 +139,7 @@ export class KeyboardNavigation {
       }
 
       if (!item.classList.contains('open')) {
-        const target = this.directSpan(item);
-      if (target) {
-        this.keyboardClick(target);
-      }
+        this.activateItem(item);
       } else {
         const child = this.firstVisibleChild(item);
         if (child) {
@@ -164,10 +151,7 @@ export class KeyboardNavigation {
 
     if (event.key === 'ArrowLeft') {
       if (item.classList.contains('folder') && item.classList.contains('open')) {
-        const target = this.directSpan(item);
-      if (target) {
-        this.keyboardClick(target);
-      }
+        this.activateItem(item);
       } else {
         const parent = this.parentFolder(item);
         if (parent) {
@@ -177,13 +161,23 @@ export class KeyboardNavigation {
     }
   }
 
+  /**
+   * Clicks the row's span, i.e. opens a bookmark or toggles a folder — the
+   * same action a mouse click on that row would trigger.
+   */
+  private activateItem(item: HTMLElement): void {
+    const target = this.directSpan(item);
+    if (target) {
+      this.keyboardClick(target);
+    }
+  }
+
   private handleSearchKeyDown(event: KeyboardEvent): void {
     if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
       return;
     }
 
-    const handled = ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter'];
-    if (!handled.includes(event.key)) {
+    if (!KeyboardNavigation.SEARCH_KEYS.has(event.key)) {
       return;
     }
 
@@ -279,35 +273,39 @@ export class KeyboardNavigation {
     return null;
   }
 
-  private isTreeVisible(item: HTMLElement): boolean {
-    let node: HTMLElement | null = item;
+  private visibleTreeItems(): HTMLElement[] {
+    const items: HTMLElement[] = [];
+    this.collectVisibleItems(this.bookmarks, items);
+    return items;
+  }
 
-    while (node && node !== this.bookmarks) {
-      const parentSub: HTMLElement | null = node.parentElement;
-      if (parentSub && parentSub.classList.contains('sub')) {
-        const parentFolder: HTMLElement | null = parentSub.parentElement;
-        if (
-          !(parentFolder instanceof HTMLElement) ||
-          !parentFolder.classList.contains('folder') ||
-          !parentFolder.classList.contains('open')
-        ) {
-          return false;
-        }
-
-        node = parentFolder;
+  /**
+   * Walks down from `container`, only descending into a folder's subtree
+   * when that folder is open. This deliberately avoids querySelectorAll('li')
+   * over the whole popup: a folder that was opened and later closed keeps
+   * its (now hidden) subtree in the DOM, so scanning every <li> and then
+   * checking each one's ancestor chain individually costs O(total nodes *
+   * depth). Only descending into open folders costs O(visible nodes).
+   */
+  private collectVisibleItems(container: Element, out: HTMLElement[]): void {
+    for (const child of Array.from(container.children)) {
+      if (!(child instanceof HTMLElement) || child.tagName !== 'LI') {
         continue;
       }
 
-      node = node.parentElement;
+      if (this.directSpan(child) !== null) {
+        out.push(child);
+      }
+
+      if (child.classList.contains('open')) {
+        const sub = Array.from(child.children).find(
+          (c) => c instanceof HTMLElement && c.classList.contains('sub')
+        );
+        if (sub instanceof HTMLElement) {
+          this.collectVisibleItems(sub, out);
+        }
+      }
     }
-
-    return true;
-  }
-
-  private visibleTreeItems(): HTMLElement[] {
-    return Array.from(this.bookmarks.querySelectorAll('li'))
-      .filter((item) => this.directSpan(item) !== null)
-      .filter((item) => this.isTreeVisible(item));
   }
 
   private clearKeyboardSelection(): void {
@@ -396,7 +394,7 @@ export class KeyboardNavigation {
       if (
         child instanceof HTMLElement &&
         child.tagName === 'LI' &&
-        this.isTreeVisible(child)
+        this.directSpan(child) !== null
       ) {
         return child;
       }

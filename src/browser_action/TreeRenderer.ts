@@ -4,61 +4,12 @@ import PersistentSet from "./PersistentSet";
 export class TreeRenderer {
   private openFolders: PersistentSet<string>;
   private readonly hideEmptyFolders: boolean;
-  private readonly startWithAllFoldersClosed: boolean;
+  private readonly emptyFolderCache = new WeakMap<BookmarkTreeNode, boolean>();
 
-  // ✅ SEARCH STATE
-  private filter: string = '';
-
-  constructor(
-    openFolders: PersistentSet<string>,
-    hideEmptyFolders: boolean,
-    startWithAllFoldersClosed: boolean
-  ) {
+  constructor(openFolders: PersistentSet<string>, hideEmptyFolders: boolean) {
     this.openFolders = openFolders;
     this.hideEmptyFolders = hideEmptyFolders;
-    this.startWithAllFoldersClosed = startWithAllFoldersClosed;
   }
-
-  // ✅ SET SEARCH FILTER
-  setFilter(filter: string): void {
-    this.filter = filter.trim().toLowerCase();
-  }
-
-  // =========================
-  // SEARCH HELPERS
-  // =========================
-
-  private matches(node: BookmarkTreeNode): boolean {
-    if (!this.filter) return true;
-
-    const title = (node.title || '').toLowerCase();
-
-    if (title.includes(this.filter)) return true;
-
-    if (node.url && node.url.toLowerCase().includes(this.filter)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  private folderContainsMatch(folder: BookmarkTreeNode): boolean {
-    if (this.matches(folder)) return true;
-
-    if (!folder.children) return false;
-
-    for (const child of folder.children) {
-      if (this.folderContainsMatch(child)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  // =========================
-  // MAIN RENDER
-  // =========================
 
   renderTree(
     treeNode: BookmarkTreeNode,
@@ -66,7 +17,6 @@ export class TreeRenderer {
     topLevel: boolean = false,
     visible: boolean = true
   ): HTMLElement | DocumentFragment {
-
     let wrapper: HTMLElement | DocumentFragment;
 
     if (topLevel) {
@@ -85,10 +35,7 @@ export class TreeRenderer {
     }
 
     treeNode.children.forEach((child: BookmarkTreeNode) => {
-      if (!child) return;
-
-      // ✅ SEARCH FILTER (skip whole subtree if no match)
-      if (this.filter && !this.folderContainsMatch(child)) {
+      if (!child) {
         return;
       }
 
@@ -97,34 +44,23 @@ export class TreeRenderer {
         return;
       }
 
-      const isOpen =
-        this.filter !== '' ||
-        this.openFolders.contains(child.id);
-
-      wrapper.appendChild(
-        this.renderFolder(isOpen, document, child)
-      );
+      const isOpen = this.openFolders.contains(child.id);
+      wrapper.appendChild(this.renderFolder(isOpen, document, child));
     });
 
     return wrapper;
   }
-
-  // =========================
-  // FOLDER
-  // =========================
 
   private renderFolder(
     isOpen: boolean,
     document: Document,
     child: BookmarkTreeNode
   ): HTMLElement {
-
-    const d = document.createElement('li');
-
     if (typeof child.url !== 'undefined') {
       throw new Error('Folder expected but bookmark found');
     }
 
+    const d = document.createElement('li');
     d.classList.add('folder');
 
     if (isOpen) {
@@ -137,89 +73,71 @@ export class TreeRenderer {
 
     if (this.hideEmptyFolders && this.isFolderEmpty(child)) {
       d.classList.add('hidden');
-    } else {
-      d.dataset.itemId = child.id;
+      return d;
+    }
 
-      if (child.children && child.children.length) {
-        if (isOpen) {
-          const children = this.renderTree(child, document, false, isOpen);
-          d.appendChild(children);
-        }
+    d.dataset.itemId = child.id;
 
-        d.dataset.loaded = isOpen ? '1' : '0';
+    if (child.children && child.children.length) {
+      if (isOpen) {
+        d.appendChild(this.renderTree(child, document, false, isOpen));
       }
+
+      d.dataset.loaded = isOpen ? '1' : '0';
     }
 
     return d;
   }
 
-  // =========================
-  // BOOKMARK
-  // =========================
-
-  private renderBookmark(
-    child: BookmarkTreeNode,
-    document: Document
-  ): HTMLElement {
-
+  private renderBookmark(child: BookmarkTreeNode, document: Document): HTMLElement {
     if (!child.url) {
       throw new Error('Bookmark expected but folder found');
     }
 
-    // ✅ FILTER BOOKMARKS
-    if (!this.matches(child)) {
-      return document.createDocumentFragment() as unknown as HTMLElement;
-    }
-
     const d = document.createElement('li');
-
     d.dataset.url = child.url;
     d.dataset.itemId = child.id;
 
     const bookmark = document.createElement('span');
+    bookmark.className = 'bookmark';
 
-    if (!/^\s*$/.test(child.title)) {
-      bookmark.innerText = child.title;
-    } else {
+    if (/^\s*$/.test(child.title)) {
       bookmark.innerHTML = '&nbsp;';
+    } else {
+      bookmark.innerText = child.title;
     }
 
     bookmark.title = `${child.title} [${child.url}]`;
-    bookmark.style.backgroundImage = `url("${this.getFaviconUrl(child.url)}")`;
-
-    bookmark.className = 'bookmark';
+    bookmark.style.backgroundImage = `url("${TreeRenderer.getFaviconUrl(child.url)}")`;
 
     d.appendChild(bookmark);
 
     return d;
   }
 
-  // =========================
-  // FAVICON
-  // =========================
-
-  private getFaviconUrl(url: string): string {
+  static getFaviconUrl(url: string): string {
     const urlObj = new URL(chrome.runtime.getURL('/_favicon/'));
     urlObj.searchParams.set('pageUrl', url);
     urlObj.searchParams.set('size', '32');
     return urlObj.toString();
   }
 
-  // =========================
-  // UTIL
-  // =========================
-
   isFolderEmpty(folder: BookmarkTreeNode): boolean {
-    if (!folder.children) return false;
-
-    if (folder.children.length === 0) return true;
-
-    for (const child of folder.children) {
-      if (!this.isFolderEmpty(child)) {
-        return false;
-      }
+    const cached = this.emptyFolderCache.get(folder);
+    if (cached !== undefined) {
+      return cached;
     }
 
-    return true;
+    let empty: boolean;
+    if (!folder.children) {
+      empty = false;
+    } else if (folder.children.length === 0) {
+      empty = true;
+    } else {
+      empty = folder.children.every((child) => this.isFolderEmpty(child));
+    }
+
+    this.emptyFolderCache.set(folder, empty);
+    return empty;
   }
 }

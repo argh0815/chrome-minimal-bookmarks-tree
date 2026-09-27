@@ -34,7 +34,6 @@ if (null !== fontList) {
       const option = window.document.createElement('option');
       option.textContent = font.displayName;
       option.style.fontFamily = `"${font.displayName}"`;
-      option.textContent = font.displayName;
       fontList.appendChild(option);
     });
     (fontList.parentElement as HTMLElement).classList.remove('hidden');

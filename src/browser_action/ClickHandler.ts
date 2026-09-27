@@ -30,20 +30,15 @@ export class ClickHandler {
       return;
     }
 
-    if (!(event.target instanceof HTMLElement)) {
+    const row = ClickHandler.getRow(event);
+    if (!row) {
       return false;
     }
 
-    if (event.target.nodeName !== 'SPAN') {
-      return false;
-    }
+    ClickHandler.clearSelection();
 
-    document.querySelectorAll('.selected').forEach((element: Element) => {
-      element.classList.remove('selected');
-    });
-
-    if (event.target.parentNode instanceof HTMLElement && event.target.parentNode.classList.contains('folder')) {
-      this.folderToggler.toggle(event.target.parentNode);
+    if (row.classList.contains('folder')) {
+      this.folderToggler.toggle(row);
 
       return false;
     }
@@ -52,61 +47,33 @@ export class ClickHandler {
       return false;
     }
 
-    let actionType = 'click_action';
+    const actionType = event.ctrlKey || event.metaKey ? 'super_click_action' : 'click_action';
 
-    if (event.ctrlKey || event.metaKey) {
-      actionType = 'super_click_action';
-    }
-
-    if (event.target.parentNode instanceof HTMLElement) {
-      const url = Utils.getElementData(event.target.parentNode, 'url');
-      ClickHandler.openBookmark(url, this.settings.getString(actionType));
-    }
+    const url = Utils.getElementData(row, 'url');
+    ClickHandler.openBookmark(url, this.settings.getString(actionType));
 
     return Utils.nothing(event);
   }
 
   handleRightClick(event: MouseEvent) {
-    if (!(event.target instanceof HTMLElement)) {
+    const row = ClickHandler.getRow(event);
+    if (!row) {
       return Utils.nothing(event);
     }
 
-    if (event.target.nodeName !== 'SPAN') {
-      return Utils.nothing(event);
-    }
-
-    document.querySelectorAll('.selected').forEach((element: Element) => {
-      element.classList.remove('selected');
-    });
-
-    if (!(event.target.parentNode instanceof HTMLElement)) {
-      return Utils.nothing(event);
-    }
+    ClickHandler.clearSelection();
+    row.classList.add('selected');
 
     const offset = {
       x: event.pageX,
       y: event.pageY,
     };
 
-    if (event.target.parentNode.classList.contains('folder')) {
-      const folder = event.target.parentNode;
-      folder.classList.add('selected');
+    const menu = row.classList.contains('folder')
+      ? this.contextMenuFactory.forFolder(row)
+      : this.contextMenuFactory.forBookmark(row);
 
-      this.contextMenuRenderer.render(
-        this.contextMenuFactory.forFolder(folder),
-        offset
-      );
-
-      return Utils.nothing(event);
-    }
-
-    const bookmark = event.target.parentNode;
-    bookmark.classList.add('selected');
-
-    this.contextMenuRenderer.render(
-      this.contextMenuFactory.forBookmark(bookmark),
-      offset
-    );
+    this.contextMenuRenderer.render(menu, offset);
 
     return Utils.nothing(event);
   }
@@ -114,29 +81,43 @@ export class ClickHandler {
   handleMouseDown(event: MouseEvent) {
     event.preventDefault();
 
-    if (!(event.target instanceof HTMLElement)) {
+    const row = ClickHandler.getRow(event);
+    if (!row) {
       return false;
     }
 
-    if (event.target.nodeName !== 'SPAN') {
+    ClickHandler.clearSelection();
+
+    if (event.button !== 1) {
       return false;
     }
 
-    document.querySelectorAll('.selected').forEach((element: Element) => {
-      element.classList.remove('selected');
-    });
-
-    if (event.button !== 1 || !(event.target.parentNode instanceof HTMLElement)) {
-      return false;
-    }
-
-    if (event.target.parentNode.classList.contains('folder')) {
-      Utils.openAllBookmarks(Utils.getElementData(event.target.parentNode, 'itemId'));
+    if (row.classList.contains('folder')) {
+      Utils.openAllBookmarks(Utils.getElementData(row, 'itemId'));
       return Utils.nothing(event);
     }
 
-    const url = Utils.getElementData(event.target.parentNode, 'url');
+    const url = Utils.getElementData(row, 'url');
     ClickHandler.openBookmark(url, this.settings.getString('middle_click_action'));
+  }
+
+  /**
+   * Every handler only cares about clicks on a bookmark/folder row, which is
+   * always the parent <li> of the clicked <span>. Returns null for anything
+   * else so callers can bail out early.
+   */
+  private static getRow(event: MouseEvent): HTMLElement | null {
+    if (!(event.target instanceof HTMLElement) || event.target.nodeName !== 'SPAN') {
+      return null;
+    }
+
+    return event.target.parentNode instanceof HTMLElement ? event.target.parentNode : null;
+  }
+
+  private static clearSelection(): void {
+    document.querySelectorAll('.selected').forEach((element: Element) => {
+      element.classList.remove('selected');
+    });
   }
 
   static openBookmark(url: string, where: string): void {

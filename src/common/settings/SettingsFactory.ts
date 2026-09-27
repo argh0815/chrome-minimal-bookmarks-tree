@@ -33,16 +33,22 @@ export class SettingsFactory {
       const values = await chrome.storage.sync.get(defaults);
 
       if (typeof values['close_old_folder'] === 'undefined' && typeof localStorage !== 'undefined') {
-        // Migrate from localStorage to chrome storage.
+        // Migrate from localStorage to chrome storage, in a single write
+        // instead of one awaited round trip per setting (this only runs
+        // once, on the first popup open after upgrading).
         // Only options and browser action can migrate, as service worker doesn't have access to localStorage.
+        const migrated: { [s: string]: any } = {};
         for (const key of Object.keys(defaults)) {
           const value = localStorage.getItem(`setting_${key}`);
           if (null === value) {
             continue;
           }
-          const decodedValue = JSON.parse(value);
-          await chrome.storage.sync.set({ [key]: decodedValue });
-          values[key] = decodedValue;
+          migrated[key] = JSON.parse(value);
+        }
+
+        if (Object.keys(migrated).length > 0) {
+          await chrome.storage.sync.set(migrated);
+          Object.assign(values, migrated);
         }
       }
 
